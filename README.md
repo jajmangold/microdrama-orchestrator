@@ -74,6 +74,8 @@ This uses Docker exec against the running `wan2gp` container and calls `wgp.py -
 Successful dry runs, Wan2GP validation runs, and completed renders write a timestamped render manifest under
 `/projects/microdramas/orchestrator_runs/<episode>/<scene>/<render_id>/` and ingest that manifest into Neo4j.
 Ledger statuses ending in `_ingested` mean the `RenderRun` and linked `Asset` nodes were written to the world graph.
+Before leasing a GPU, the flow preflights the scene and Wan2GP settings, resolves project-relative paths, verifies
+required start keyframes and audio guides exist, and records the resolved inputs in the render manifest.
 
 Acquire and release a local GPU lease:
 

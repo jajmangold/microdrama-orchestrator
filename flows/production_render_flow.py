@@ -12,6 +12,7 @@ from prefect import flow, get_run_logger, task
 
 from app.gpu_leases import LeaseRequest, ReleaseRequest, acquire_lease, read_profile, release_lease
 from app.neo4j_assets import ingest_render_manifest
+from app.render_assets import preflight_scene_assets
 from app.render_ledger import upsert_render_run
 from app.wan2gp_cli import run_wan2gp_process
 
@@ -52,6 +53,11 @@ def load_scene_manifest(scene_manifest_path: str) -> dict[str, Any]:
     return scene
 
 
+@task
+def preflight_assets(scene: dict[str, Any]) -> dict[str, Any]:
+    return preflight_scene_assets(scene)
+
+
 @task(retries=2, retry_delay_seconds=5)
 def check_http_service(name: str, url: str) -> dict[str, Any]:
     try:
@@ -79,6 +85,7 @@ def release_gpu_role(lease_id: str) -> dict[str, Any]:
 def build_render_manifest(
     scene: dict[str, Any],
     scene_manifest_path: str,
+    asset_preflight: dict[str, Any],
     lease: dict[str, Any],
     render_id: str,
     out_dir: str,
@@ -96,7 +103,7 @@ def build_render_manifest(
             "episode_id": episode_id,
             "atlas_task_id": scene.get("atlas_task_id", ""),
             "model": scene.get("video_generation", {}).get("model_type", render["model"]),
-            "settings_json": scene.get("video_generation", {}).get("settings_json", ""),
+            "settings_json": asset_preflight.get("settings_json", ""),
             "prompt": scene.get("video_generation", {}).get("prompt", ""),
             "negative_prompt": scene.get("video_generation", {}).get("negative_prompt", ""),
         }
@@ -104,9 +111,10 @@ def build_render_manifest(
     render["source_manifests"]["scene_manifest"] = scene_manifest_path
     render["source_manifests"]["keyframe_manifest"] = scene.get("visuals", {}).get("keyframe_manifest", "")
     render["source_manifests"]["dialogue_manifest"] = scene.get("dialogue", {}).get("dialogue_lines_manifest", "")
-    render["inputs"]["start_keyframe_path"] = scene.get("visuals", {}).get("start_keyframe_path", "")
-    render["inputs"]["end_keyframe_path"] = scene.get("visuals", {}).get("end_keyframe_path", "")
-    render["inputs"]["audio_guide_path"] = scene.get("video_generation", {}).get("audio_guide_path", "")
+    render["inputs"]["start_keyframe_path"] = asset_preflight.get("start_keyframe_path", "")
+    render["inputs"]["end_keyframe_path"] = asset_preflight.get("end_keyframe_path", "")
+    render["inputs"]["audio_guide_path"] = asset_preflight.get("audio_guide_path", "")
+    render["runtime"]["settings_summary"] = asset_preflight.get("settings", {})
     render["runtime"].update(
         {
             "host": os.uname().nodename,
@@ -181,6 +189,7 @@ def microdrama_production_render(
 ) -> str:
     logger = get_run_logger()
     scene = load_scene_manifest(scene_manifest_path)
+    asset_preflight = preflight_assets(scene)
     render_id = render_attempt_id(scene["scene_id"])
     run_dir = PROJECT_ROOT / "orchestrator_runs" / scene["episode_id"] / scene["scene_id"] / render_id
 
@@ -208,7 +217,7 @@ def microdrama_production_render(
     record_render_run(scene, render_id, "leased", dry_run, gpu_role, service_checks, lease=lease)
     try:
         if not dry_run:
-            settings_json = scene.get("video_generation", {}).get("settings_json", "")
+            settings_json = asset_preflight.get("settings_json", "")
             if not settings_json:
                 raise ValueError("Live Wan2GP render requires scene.video_generation.settings_json")
             wan_out_dir = run_dir / "wan2gp"
@@ -219,6 +228,7 @@ def microdrama_production_render(
             manifest_result = build_render_manifest(
                 scene,
                 scene_manifest_path,
+                asset_preflight,
                 lease,
                 render_id,
                 str(run_dir),
@@ -274,6 +284,7 @@ def microdrama_production_render(
         manifest_result = build_render_manifest(
             scene,
             scene_manifest_path,
+            asset_preflight,
             lease,
             render_id,
             str(run_dir),
