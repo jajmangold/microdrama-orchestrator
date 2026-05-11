@@ -71,6 +71,10 @@ PY
 
 This uses Docker exec against the running `wan2gp` container and calls `wgp.py --process ... --dry-run`.
 
+Successful dry runs, Wan2GP validation runs, and completed renders write a timestamped render manifest under
+`/projects/microdramas/orchestrator_runs/<episode>/<scene>/<render_id>/` and ingest that manifest into Neo4j.
+Ledger statuses ending in `_ingested` mean the `RenderRun` and linked `Asset` nodes were written to the world graph.
+
 Acquire and release a local GPU lease:
 
 ```bash

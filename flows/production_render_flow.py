@@ -11,6 +11,7 @@ import httpx
 from prefect import flow, get_run_logger, task
 
 from app.gpu_leases import LeaseRequest, ReleaseRequest, acquire_lease, read_profile, release_lease
+from app.neo4j_assets import ingest_render_manifest
 from app.render_ledger import upsert_render_run
 from app.wan2gp_cli import run_wan2gp_process
 
@@ -150,6 +151,14 @@ def record_render_run(
 
 
 @task
+def ingest_manifest_into_neo4j(manifest_path: str, scene_manifest_path: str) -> dict[str, Any]:
+    try:
+        return ingest_render_manifest(manifest_path, scene_manifest_path=scene_manifest_path)
+    except Exception as exc:  # noqa: BLE001 - a render artifact should survive graph indexing errors.
+        return {"ok": False, "error": str(exc)}
+
+
+@task
 def run_wan2gp_cli(settings_path: str, output_dir: str, validate_only: bool, gpu_ids: list[int]) -> dict[str, Any]:
     profile = read_profile()
     uuid_by_id = {int(gpu["id"]): gpu["uuid"] for gpu in profile.get("gpus", [])}
@@ -233,6 +242,32 @@ def microdrama_production_render(
                 manifest_result=manifest_result,
                 finished=True,
             )
+            ingest_result = ingest_manifest_into_neo4j(manifest_result["path"], scene_manifest_path)
+            if ingest_result.get("ok"):
+                record_render_run(
+                    scene,
+                    render_id,
+                    "render_ingested",
+                    dry_run,
+                    gpu_role,
+                    service_checks,
+                    lease=lease,
+                    manifest_result=manifest_result,
+                    finished=True,
+                )
+            else:
+                record_render_run(
+                    scene,
+                    render_id,
+                    "render_ingest_failed",
+                    dry_run,
+                    gpu_role,
+                    service_checks,
+                    lease=lease,
+                    manifest_result=manifest_result,
+                    error=ingest_result.get("error", "Unknown Neo4j ingest error"),
+                    finished=True,
+                )
             logger.info("Wan2GP CLI completed; wrote render manifest to %s", manifest_result["path"])
             return manifest_result["path"]
 
@@ -255,6 +290,32 @@ def microdrama_production_render(
             manifest_result=manifest_result,
             finished=True,
         )
+        ingest_result = ingest_manifest_into_neo4j(manifest_result["path"], scene_manifest_path)
+        if ingest_result.get("ok"):
+            record_render_run(
+                scene,
+                render_id,
+                "dry_run_ingested",
+                dry_run,
+                gpu_role,
+                service_checks,
+                lease=lease,
+                manifest_result=manifest_result,
+                finished=True,
+            )
+        else:
+            record_render_run(
+                scene,
+                render_id,
+                "dry_run_ingest_failed",
+                dry_run,
+                gpu_role,
+                service_checks,
+                lease=lease,
+                manifest_result=manifest_result,
+                error=ingest_result.get("error", "Unknown Neo4j ingest error"),
+                finished=True,
+            )
         logger.info("Wrote dry-run render manifest to %s", manifest_result["path"])
         return manifest_result["path"]
     except Exception as exc:
