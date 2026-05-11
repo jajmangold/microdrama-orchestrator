@@ -1,0 +1,21 @@
+FROM python:3.12-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn[standard] \
+    httpx \
+    openai \
+    neo4j \
+    "psycopg[binary]" \
+    langgraph \
+    langchain-core \
+    prefect==3.6.29 \
+    pydantic-settings
+
+COPY app /app/app
+COPY flows /app/flows

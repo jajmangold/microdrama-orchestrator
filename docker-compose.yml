@@ -1,0 +1,166 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: microdrama-postgres
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5433:5432"
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-microdrama}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-microdrama-local}
+      POSTGRES_DB: ${POSTGRES_DB:-microdrama}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
+  prefect-server:
+    image: prefecthq/prefect:3-latest
+    container_name: microdrama-prefect
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:4200:4200"
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://${POSTGRES_USER:-microdrama}:${POSTGRES_PASSWORD:-microdrama-local}@postgres:5432/${POSTGRES_DB:-microdrama}
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+      PREFECT_UI_URL: ${PREFECT_UI_URL:-http://127.0.0.1:4200}
+    command: prefect server start --host 0.0.0.0
+
+  orchestrator-api:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    container_name: microdrama-api
+    restart: unless-stopped
+    depends_on:
+      prefect-server:
+        condition: service_started
+    ports:
+      - "127.0.0.1:8090:8090"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      PREFECT_API_URL: ${PREFECT_API_URL:-http://prefect-server:4200/api}
+      RENDER_LEDGER_DATABASE_URL: postgresql://${POSTGRES_USER:-microdrama}:${POSTGRES_PASSWORD:-microdrama-local}@postgres:5432/${POSTGRES_DB:-microdrama}
+      QWEN27B_BASE_URL: ${QWEN27B_BASE_URL:-http://rtx0.python-bull.ts.net:8000/v1}
+      QWEN27B_MODEL: ${QWEN27B_MODEL:-qwen27b}
+      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j-world:7687}
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-microdrama-local}
+      WAN2GP_URL: ${WAN2GP_URL:-http://host.docker.internal:7860}
+      COMFY_URL: ${COMFY_URL:-http://comfyui:8188}
+      ACESTEP_URL: ${ACESTEP_URL:-http://acestep-gguf:8080}
+    volumes:
+      - ./app:/app/app:ro
+      - ./config:/app/config:ro
+      - ./flows:/app/flows:ro
+      - ./logs:/app/logs
+      - /srv/nvme-data/containers/projects/microdramas:/projects/microdramas
+    networks:
+      - default
+      - neo4j_world
+      - comfy_net
+      - wan2gp_net
+      - acestep_net
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8090
+
+  prefect-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    container_name: microdrama-worker
+    restart: unless-stopped
+    depends_on:
+      prefect-server:
+        condition: service_started
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      PREFECT_API_URL: ${PREFECT_API_URL:-http://prefect-server:4200/api}
+      RENDER_LEDGER_DATABASE_URL: postgresql://${POSTGRES_USER:-microdrama}:${POSTGRES_PASSWORD:-microdrama-local}@postgres:5432/${POSTGRES_DB:-microdrama}
+      QWEN27B_BASE_URL: ${QWEN27B_BASE_URL:-http://rtx0.python-bull.ts.net:8000/v1}
+      QWEN27B_MODEL: ${QWEN27B_MODEL:-qwen27b}
+      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j-world:7687}
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-microdrama-local}
+      WAN2GP_URL: ${WAN2GP_URL:-http://host.docker.internal:7860}
+      COMFY_URL: ${COMFY_URL:-http://comfyui:8188}
+      ACESTEP_URL: ${ACESTEP_URL:-http://acestep-gguf:8080}
+    volumes:
+      - ./app:/app/app:ro
+      - ./config:/app/config:ro
+      - ./flows:/app/flows:ro
+      - ./logs:/app/logs
+      - /srv/nvme-data/containers/projects/microdramas:/projects/microdramas
+      - /srv/nvme-data/containers/wan2gp/outputs:/wan2gp/outputs
+      - /srv/nvme-data/containers/comfy/storage-user/output:/comfy/output
+    networks:
+      - default
+      - neo4j_world
+      - comfy_net
+      - wan2gp_net
+      - acestep_net
+    command: >
+      bash -lc "until prefect work-pool inspect microdrama-local >/dev/null 2>&1;
+      do prefect work-pool create microdrama-local --type process >/dev/null 2>&1 || sleep 3;
+      done;
+      prefect worker start --pool microdrama-local"
+
+  atlas-mcp:
+    build:
+      context: ./atlas/atlas-mcp-server
+      dockerfile: Dockerfile.local
+    container_name: microdrama-atlas-mcp
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3010:3010"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      NEO4J_URI: ${NEO4J_URI:-bolt://neo4j-world:7687}
+      NEO4J_USER: ${NEO4J_USER:-neo4j}
+      NEO4J_PASSWORD: ${NEO4J_PASSWORD:-microdrama-local}
+      MCP_TRANSPORT_TYPE: http
+      MCP_HTTP_HOST: 0.0.0.0
+      MCP_HTTP_PORT: 3010
+      MCP_LOG_LEVEL: info
+      MCP_ALLOWED_ORIGINS: ${MCP_ALLOWED_ORIGINS:-http://127.0.0.1:3011,http://localhost:3011}
+      NODE_ENV: development
+      LOGS_DIR: /app/logs
+      BACKUP_FILE_DIR: /app/atlas-backups
+    volumes:
+      - ./logs/atlas:/app/logs
+      - ./data/atlas-backups:/app/atlas-backups
+    networks:
+      - default
+      - neo4j_world
+
+  atlas-webui:
+    build:
+      context: ./atlas/atlas-mcp-server
+      dockerfile: Dockerfile.local
+    container_name: microdrama-atlas-webui
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3011:8000"
+    command: npx serve src/webui -l tcp://0.0.0.0:8000
+
+networks:
+  neo4j_world:
+    external: true
+    name: neo4j-world_default
+  comfy_net:
+    external: true
+    name: comfy_default
+  wan2gp_net:
+    external: true
+    name: wan2gp_default
+  acestep_net:
+    external: true
+    name: acestep-gguf_default

@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "host_id": "beast-sm70-16x16gb",
+  "description": "Local SM70 render host with 16 visible 16GB-class CUDA devices. Use explicit leases before production jobs.",
+  "default_ttl_minutes": 180,
+  "roles": {
+    "wan2gp_ltx_30s": {
+      "description": "Near-exclusive GPU for a 30s Wan2GP LTX sliding-window render. Budget about 70 minutes per 30s clip.",
+      "gpu_count": 1,
+      "exclusive": true,
+      "candidate_gpu_ids": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+      "expected_minutes_per_unit": 70
+    },
+    "comfy_zimage_3gpu": {
+      "description": "Comfy Z-Image fast still preset: UNet, text encoder, and VAE split across GPUs.",
+      "gpu_count": 3,
+      "exclusive": true,
+      "preferred_gpu_ids": [4, 13, 14],
+      "candidate_gpu_ids": [4, 13, 14, 0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 15],
+      "expected_minutes_per_unit": 1
+    },
+    "comfy_klein_edit": {
+      "description": "Comfy Flux Klein edit preset: text encoder, model, and VAE split across GPUs.",
+      "gpu_count": 3,
+      "exclusive": true,
+      "preferred_gpu_ids": [4, 13, 14],
+      "candidate_gpu_ids": [4, 13, 14, 0, 1, 2, 3, 5, 6, 7, 8, 9, 10, 11, 12, 15],
+      "expected_minutes_per_unit": 8
+    },
+    "qwen3_tts": {
+      "description": "Qwen3 TTS generation or future standalone TTS service.",
+      "gpu_count": 1,
+      "exclusive": false,
+      "candidate_gpu_ids": [12, 13, 14, 15],
+      "expected_minutes_per_unit": 2
+    }
+  }
+}
