@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import time
 import uuid
 from dataclasses import dataclass
@@ -10,6 +11,10 @@ from typing import Any
 import httpx
 
 PROJECT_ROOT = Path("/projects/microdramas")
+COMFY_OUTPUT_ROOT = Path(os.getenv("COMFY_OUTPUT_ROOT", "/comfy/output"))
+HOST_COMFY_OUTPUT_ROOT = Path(
+    os.getenv("HOST_COMFY_OUTPUT_ROOT", "/srv/nvme-data/containers/comfy/storage-user/output")
+)
 
 
 @dataclass
@@ -106,12 +111,17 @@ def collect_output_images(history_item: dict[str, Any]) -> list[dict[str, Any]]:
     images: list[dict[str, Any]] = []
     for node_id, node_output in history_item.get("outputs", {}).items():
         for image in node_output.get("images", []):
+            filename = image.get("filename", "")
+            subfolder = image.get("subfolder", "")
+            relative = Path(subfolder) / filename if subfolder else Path(filename)
             images.append(
                 {
                     "node_id": node_id,
-                    "filename": image.get("filename", ""),
-                    "subfolder": image.get("subfolder", ""),
+                    "filename": filename,
+                    "subfolder": subfolder,
                     "type": image.get("type", ""),
+                    "container_path": str(COMFY_OUTPUT_ROOT / relative),
+                    "host_path": str(HOST_COMFY_OUTPUT_ROOT / relative),
                 }
             )
     return images

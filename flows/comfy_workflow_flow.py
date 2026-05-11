@@ -14,6 +14,7 @@ from app.comfy_workflows import (
     wait_for_outputs,
     write_json,
 )
+from app.gpu_leases import LeaseRequest, ReleaseRequest, acquire_lease, release_lease
 
 PROJECT_ROOT = Path("/projects/microdramas")
 
@@ -47,45 +48,74 @@ def submit_comfy_payload(prompt: dict[str, Any], base_url: str) -> dict[str, Any
     }
 
 
+@task
+def acquire_comfy_lease(job_id: str, gpu_role: str) -> dict[str, Any]:
+    result = acquire_lease(LeaseRequest(job_id=job_id, role=gpu_role, ttl_minutes=30, owner="prefect-comfy-flow"))
+    if not result.get("acquired"):
+        raise RuntimeError(f"Could not acquire Comfy GPU lease for role {gpu_role}: {result}")
+    return result["lease"]
+
+
+@task
+def release_comfy_lease(lease_id: str) -> dict[str, Any]:
+    return release_lease(ReleaseRequest(lease_id=lease_id))
+
+
 @flow(name="microdrama-comfy-workflow")
 def microdrama_comfy_workflow(
     manifest_path: str,
     overrides: dict[str, Any] | None = None,
     dry_run: bool = True,
+    gpu_role: str = "comfy_zimage_3gpu",
 ) -> str:
     logger = get_run_logger()
     prepared_probe = prepare_workflow(manifest_path, overrides or {})
-    out_dir = PROJECT_ROOT / "orchestrator_runs" / "comfy" / run_id(prepared_probe.workflow_id)
-    result = prepare_comfy_payload(manifest_path, overrides or {}, str(out_dir))
-    if dry_run:
+    job_id = run_id(prepared_probe.workflow_id)
+    out_dir = PROJECT_ROOT / "orchestrator_runs" / "comfy" / job_id
+    lease: dict[str, Any] | None = None
+    try:
+        if not dry_run and gpu_role:
+            lease = acquire_comfy_lease(job_id, gpu_role)
+        result = prepare_comfy_payload(manifest_path, overrides or {}, str(out_dir))
+        if dry_run:
+            summary_path = write_json(
+                out_dir / "result.json",
+                {
+                    "status": "prepared",
+                    "workflow_id": result["workflow_id"],
+                    "manifest_path": result["manifest_path"],
+                    "api_workflow_path": result["api_workflow_path"],
+                    "payload_path": result["payload_path"],
+                },
+            )
+            logger.info("Prepared Comfy workflow payload at %s", result["payload_path"])
+            return summary_path
+
+        comfy_url = os.getenv("COMFY_URL", "http://comfyui:8188")
+        execution = submit_comfy_payload(result["prompt"], comfy_url)
+        lease_info = lease
+        lease_release = None
+        if lease:
+            lease_release = release_comfy_lease(lease["lease_id"])
+            lease = None
         summary_path = write_json(
             out_dir / "result.json",
             {
-                "status": "prepared",
+                "status": "completed",
                 "workflow_id": result["workflow_id"],
                 "manifest_path": result["manifest_path"],
                 "api_workflow_path": result["api_workflow_path"],
                 "payload_path": result["payload_path"],
+                "gpu_lease": lease_info,
+                "gpu_lease_release": lease_release,
+                "comfy": execution,
             },
         )
-        logger.info("Prepared Comfy workflow payload at %s", result["payload_path"])
+        logger.info("Completed Comfy workflow %s", result["workflow_id"])
         return summary_path
-
-    comfy_url = os.getenv("COMFY_URL", "http://comfyui:8188")
-    execution = submit_comfy_payload(result["prompt"], comfy_url)
-    summary_path = write_json(
-        out_dir / "result.json",
-        {
-            "status": "completed",
-            "workflow_id": result["workflow_id"],
-            "manifest_path": result["manifest_path"],
-            "api_workflow_path": result["api_workflow_path"],
-            "payload_path": result["payload_path"],
-            "comfy": execution,
-        },
-    )
-    logger.info("Completed Comfy workflow %s", result["workflow_id"])
-    return summary_path
+    finally:
+        if lease:
+            release_comfy_lease(lease["lease_id"])
 
 
 if __name__ == "__main__":
