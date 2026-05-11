@@ -12,7 +12,7 @@ from prefect import flow, get_run_logger, task
 
 from app.gpu_leases import LeaseRequest, ReleaseRequest, acquire_lease, read_profile, release_lease
 from app.neo4j_assets import ingest_render_manifest
-from app.render_assets import preflight_scene_assets
+from app.render_assets import materialize_wan2gp_settings, preflight_scene_assets
 from app.render_ledger import upsert_render_run
 from app.wan2gp_cli import run_wan2gp_process
 
@@ -180,6 +180,21 @@ def run_wan2gp_cli(settings_path: str, output_dir: str, validate_only: bool, gpu
     ).as_dict()
 
 
+@task
+def write_wan2gp_settings(
+    scene: dict[str, Any],
+    asset_preflight: dict[str, Any],
+    run_dir: str,
+    render_id: str,
+) -> str:
+    return materialize_wan2gp_settings(
+        scene=scene,
+        asset_preflight=asset_preflight,
+        output_path=Path(run_dir) / "wan2gp_settings.json",
+        output_filename=render_id,
+    )
+
+
 @flow(name="microdrama-production-render")
 def microdrama_production_render(
     scene_manifest_path: str,
@@ -221,7 +236,8 @@ def microdrama_production_render(
             if not settings_json:
                 raise ValueError("Live Wan2GP render requires scene.video_generation.settings_json")
             wan_out_dir = run_dir / "wan2gp"
-            wan_result = run_wan2gp_cli(settings_json, str(wan_out_dir), wan2gp_validate_only, lease.get("gpu_ids", []))
+            run_settings_json = write_wan2gp_settings(scene, asset_preflight, str(run_dir), render_id)
+            wan_result = run_wan2gp_cli(run_settings_json, str(wan_out_dir), wan2gp_validate_only, lease.get("gpu_ids", []))
             if not wan_result.get("ok"):
                 raise RuntimeError(f"Wan2GP CLI failed with exit code {wan_result.get('exit_code')}:\n{wan_result.get('output')}")
 
@@ -235,6 +251,7 @@ def microdrama_production_render(
                 "Wan2GP CLI validation completed." if wan2gp_validate_only else "Live Wan2GP CLI render completed.",
             )
             manifest = manifest_result["manifest"]
+            manifest["settings_json"] = run_settings_json
             generated_files = wan_result.get("generated_files", [])
             if generated_files:
                 manifest["outputs"]["video_path"] = generated_files[0]
@@ -257,7 +274,7 @@ def microdrama_production_render(
                 record_render_run(
                     scene,
                     render_id,
-                    "render_ingested",
+                    "wan2gp_validated_ingested" if wan2gp_validate_only else "render_ingested",
                     dry_run,
                     gpu_role,
                     service_checks,
@@ -269,7 +286,7 @@ def microdrama_production_render(
                 record_render_run(
                     scene,
                     render_id,
-                    "render_ingest_failed",
+                    "wan2gp_validation_ingest_failed" if wan2gp_validate_only else "render_ingest_failed",
                     dry_run,
                     gpu_role,
                     service_checks,

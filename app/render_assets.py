@@ -29,6 +29,27 @@ def project_path(path: str | Path | None) -> str:
     return str(PROJECT_ROOT / raw)
 
 
+def wan2gp_path(path: str | Path | None) -> str | None:
+    if not path:
+        return None
+    raw = Path(str(path))
+    if not raw.is_absolute():
+        raw = PROJECT_ROOT / raw
+    try:
+        return str(WAN2GP_PROJECT_ROOT / raw.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(raw)
+
+
+def write_json(path: str | Path, data: dict[str, Any]) -> str:
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    with target.open("w", encoding="utf-8") as handle:
+        json.dump(data, handle, indent=2)
+        handle.write("\n")
+    return str(target)
+
+
 def _first_present(*values: str | None) -> str:
     for value in values:
         if value:
@@ -96,3 +117,28 @@ def preflight_scene_assets(scene: dict[str, Any]) -> dict[str, Any]:
             "sliding_window_overlap": settings.get("sliding_window_overlap"),
         },
     }
+
+
+def materialize_wan2gp_settings(
+    scene: dict[str, Any],
+    asset_preflight: dict[str, Any],
+    output_path: str | Path,
+    output_filename: str,
+) -> str:
+    settings = read_json(asset_preflight["settings_json"])
+    video_generation = scene.get("video_generation", {})
+
+    if video_generation.get("prompt"):
+        settings["prompt"] = video_generation["prompt"]
+    if video_generation.get("negative_prompt"):
+        settings["negative_prompt"] = video_generation["negative_prompt"]
+    if asset_preflight.get("start_keyframe_path"):
+        settings["image_start"] = wan2gp_path(asset_preflight["start_keyframe_path"])
+        settings["image_prompt_type"] = settings.get("image_prompt_type") or "S"
+    if asset_preflight.get("end_keyframe_path"):
+        settings["image_end"] = wan2gp_path(asset_preflight["end_keyframe_path"])
+    if asset_preflight.get("audio_guide_path"):
+        settings["audio_guide"] = wan2gp_path(asset_preflight["audio_guide_path"])
+        settings["audio_prompt_type"] = settings.get("audio_prompt_type") or "A"
+    settings["output_filename"] = output_filename
+    return write_json(output_path, settings)
