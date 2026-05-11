@@ -37,6 +37,8 @@ curl http://127.0.0.1:8090/qwen27b/models
 curl -X POST http://127.0.0.1:8090/qwen27b/smoke
 curl http://127.0.0.1:8090/neo4j/smoke
 curl http://127.0.0.1:8090/gpu/profile
+curl http://127.0.0.1:8090/workers
+curl 'http://127.0.0.1:8090/workers?job_role=wan2gp_ltx_30s'
 curl http://127.0.0.1:8090/render-runs
 ```
 

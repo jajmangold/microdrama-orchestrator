@@ -7,6 +7,7 @@ from neo4j import GraphDatabase
 
 from app.gpu_leases import LeaseRequest, ReleaseRequest, acquire_lease, list_leases, read_profile, release_lease
 from app.render_ledger import get_render_run, init_render_ledger, list_render_runs
+from app.worker_profiles import list_workers, read_worker_profiles
 
 app = FastAPI(title="Microdrama Orchestrator", version="0.1.0")
 
@@ -74,6 +75,16 @@ def neo4j_smoke() -> dict[str, Any]:
 @app.get("/gpu/profile")
 def gpu_profile() -> dict[str, Any]:
     return read_profile()
+
+
+@app.get("/workers/profile")
+def workers_profile() -> dict[str, Any]:
+    return read_worker_profiles()
+
+
+@app.get("/workers")
+def workers(status: str | None = None, job_role: str | None = None) -> dict[str, Any]:
+    return {"workers": list_workers(status=status, job_role=job_role)}
 
 
 @app.get("/gpu/leases")

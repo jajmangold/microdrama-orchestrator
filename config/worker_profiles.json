@@ -1,0 +1,96 @@
+{
+  "schema_version": 1,
+  "default_scheduler_policy": {
+    "route_by": ["job_role", "model_availability", "free_capacity", "data_locality"],
+    "avoid": ["mixed_long_render_and_interactive_comfy_on_same_gpu"],
+    "notes": "Profiles describe routing intent. GPU leases still enforce local exclusivity."
+  },
+  "workers": [
+    {
+      "worker_id": "beast-sm70-local",
+      "hostname": "beast",
+      "status": "active",
+      "prefect_work_pool": "microdrama-local",
+      "orchestrator_url": "http://127.0.0.1:8090",
+      "data_root": "/srv/nvme-data/containers",
+      "gpu_profile_id": "beast-sm70-16x16gb",
+      "gpu_count": 16,
+      "gpu_arch": "sm70",
+      "vram_gb_each": 16,
+      "pcie_notes": "Cards are mostly PCIe x1; prefer resident-transformer Wan2GP settings and avoid frequent model shuttling.",
+      "services": {
+        "wan2gp": "http://host.docker.internal:7860",
+        "comfy": "http://comfyui:8188",
+        "acestep": "http://acestep-gguf:8080",
+        "neo4j": "bolt://neo4j-world:7687"
+      },
+      "models": {
+        "wan2gp_ltx": ["ltx2_22B_distilled_gguf_q4_k_m"],
+        "comfy_image": ["z-image-turbo", "flux2-klein-9b-kv-q6"],
+        "tts": ["qwen3_tts_wan2gp"],
+        "music": ["acestep"]
+      },
+      "allowed_job_roles": [
+        "wan2gp_ltx_30s",
+        "comfy_zimage_3gpu",
+        "comfy_klein_edit",
+        "qwen3_tts"
+      ],
+      "throughput_estimates": {
+        "wan2gp_ltx_30s_minutes": 70,
+        "wan2gp_ltx_10s_audio_minutes": 25,
+        "comfy_zimage_still_minutes": 1,
+        "comfy_klein_edit_minutes": 8
+      }
+    },
+    {
+      "worker_id": "rtx0-qwen27b",
+      "hostname": "rtx0.python-bull.ts.net",
+      "status": "external",
+      "prefect_work_pool": "remote-gpu-template",
+      "orchestrator_url": "",
+      "data_root": "",
+      "gpu_profile_id": "rtx0-unknown",
+      "gpu_count": null,
+      "gpu_arch": "unknown",
+      "vram_gb_each": null,
+      "pcie_notes": "Current role is remote OpenAI-compatible vLLM, not render execution.",
+      "services": {
+        "qwen27b_vllm": "http://rtx0.python-bull.ts.net:8000/v1"
+      },
+      "models": {
+        "planner_critic_vision": ["qwen3.6-27b-vl"]
+      },
+      "allowed_job_roles": [
+        "planning",
+        "vision_qa",
+        "continuity_review",
+        "script_rewrite"
+      ],
+      "throughput_estimates": {
+        "planner_tokens_per_second": null
+      }
+    },
+    {
+      "worker_id": "remote-render-template",
+      "hostname": "",
+      "status": "template",
+      "prefect_work_pool": "remote-render",
+      "orchestrator_url": "",
+      "data_root": "",
+      "gpu_profile_id": "",
+      "gpu_count": 1,
+      "gpu_arch": "",
+      "vram_gb_each": null,
+      "pcie_notes": "Fill this in when adding another machine. Keep model cache and output paths explicit.",
+      "services": {},
+      "models": {},
+      "allowed_job_roles": [
+        "wan2gp_ltx_30s",
+        "comfy_zimage_3gpu",
+        "comfy_klein_edit"
+      ],
+      "throughput_estimates": {}
+    }
+  ]
+}
