@@ -105,6 +105,22 @@ print(microdrama_comfy_workflow(
 PY
 ```
 
+Live Comfy runs can also hand off their first image output into a scene manifest:
+
+```python
+microdrama_comfy_workflow(
+    manifest_path="workflows/manifests/flux2-klein-9b-kv-q6-2gpu-consistency-lora-edit.json",
+    overrides={...},
+    dry_run=False,
+    gpu_role="comfy_klein_edit",
+    scene_manifest_path="/projects/microdramas/scenes/smoke_scene_manifest.json",
+    keyframe_role="start",
+)
+```
+
+The handoff copies the Comfy output into `/projects/microdramas/assets/generated/<scene_id>/`, updates the scene
+visual fields, creates or updates a scene-specific keyframe manifest, and leaves the asset reachable by Wan2GP.
+
 ## Project Management With Atlas
 
 Atlas is useful as the agent-facing task layer. Use it for:

@@ -11,10 +11,12 @@ from app.comfy_workflows import (
     collect_output_images,
     prepare_workflow,
     queue_prompt,
+    read_json,
     wait_for_outputs,
     write_json,
 )
 from app.gpu_leases import LeaseRequest, ReleaseRequest, acquire_lease, release_lease
+from app.manifest_handoff import register_comfy_keyframe
 
 PROJECT_ROOT = Path("/projects/microdramas")
 
@@ -61,12 +63,23 @@ def release_comfy_lease(lease_id: str) -> dict[str, Any]:
     return release_lease(ReleaseRequest(lease_id=lease_id))
 
 
+@task
+def register_keyframe_result(result_path: str, scene_manifest_path: str, keyframe_role: str) -> dict[str, Any]:
+    return register_comfy_keyframe(
+        comfy_result_path=result_path,
+        scene_manifest_path=scene_manifest_path,
+        role=keyframe_role,
+    )
+
+
 @flow(name="microdrama-comfy-workflow")
 def microdrama_comfy_workflow(
     manifest_path: str,
     overrides: dict[str, Any] | None = None,
     dry_run: bool = True,
     gpu_role: str = "comfy_zimage_3gpu",
+    scene_manifest_path: str = "",
+    keyframe_role: str = "",
 ) -> str:
     logger = get_run_logger()
     prepared_probe = prepare_workflow(manifest_path, overrides or {})
@@ -111,6 +124,11 @@ def microdrama_comfy_workflow(
                 "comfy": execution,
             },
         )
+        if scene_manifest_path and keyframe_role:
+            handoff = register_keyframe_result(summary_path, scene_manifest_path, keyframe_role)
+            summary = read_json(summary_path)
+            summary["manifest_handoff"] = handoff
+            write_json(summary_path, summary)
         logger.info("Completed Comfy workflow %s", result["workflow_id"])
         return summary_path
     finally:
