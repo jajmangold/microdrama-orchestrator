@@ -55,6 +55,22 @@ docker compose run --rm prefect-worker python -m flows.production_render_flow
 This validates service reachability and writes a dry-run render manifest without submitting a GPU render.
 It also records the run in Postgres under `render_runs`.
 
+Register the production render dry-run as a named Prefect deployment:
+
+```bash
+docker compose run --rm prefect-worker bash /app/scripts/deploy_prefect_flows.sh
+```
+
+Launch and inspect that deployment:
+
+```bash
+docker compose run --rm prefect-worker prefect deployment run 'microdrama-production-render/smoke-dry-run'
+docker compose run --rm prefect-worker prefect flow-run inspect <flow-run-uuid>
+```
+
+Validation on 2026-05-11 created deployment `microdrama-production-render/smoke-dry-run` and launched flow run
+`aeda2816-9017-42f2-8e0c-1769dd6879cf`, which completed through the `microdrama-local` process worker.
+
 Validate the live Wan2GP CLI path without rendering:
 
 ```bash

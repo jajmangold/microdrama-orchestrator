@@ -60,6 +60,7 @@ services:
       - ./app:/app/app:ro
       - ./config:/app/config:ro
       - ./flows:/app/flows:ro
+      - ./scripts:/app/scripts:ro
       - ./logs:/app/logs
       - /srv/nvme-data/containers/projects/microdramas:/projects/microdramas
       - /var/run/docker.sock:/var/run/docker.sock
@@ -97,6 +98,7 @@ services:
       - ./app:/app/app:ro
       - ./config:/app/config:ro
       - ./flows:/app/flows:ro
+      - ./scripts:/app/scripts:ro
       - ./logs:/app/logs
       - /srv/nvme-data/containers/projects/microdramas:/projects/microdramas
       - /srv/nvme-data/containers/wan2gp/outputs:/wan2gp/outputs
