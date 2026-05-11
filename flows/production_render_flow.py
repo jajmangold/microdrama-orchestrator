@@ -10,8 +10,9 @@ from typing import Any
 import httpx
 from prefect import flow, get_run_logger, task
 
-from app.gpu_leases import LeaseRequest, ReleaseRequest, acquire_lease, release_lease
+from app.gpu_leases import LeaseRequest, ReleaseRequest, acquire_lease, read_profile, release_lease
 from app.render_ledger import upsert_render_run
+from app.wan2gp_cli import run_wan2gp_process
 
 PROJECT_ROOT = Path("/projects/microdramas")
 RENDER_TEMPLATE = PROJECT_ROOT / "renders/render_manifest_template.json"
@@ -19,6 +20,11 @@ RENDER_TEMPLATE = PROJECT_ROOT / "renders/render_manifest_template.json"
 
 def utc_now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def render_attempt_id(scene_id: str) -> str:
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    return f"render_{scene_id}_{stamp}"
 
 
 def read_json(path: str | Path) -> dict[str, Any]:
@@ -57,7 +63,7 @@ def check_http_service(name: str, url: str) -> dict[str, Any]:
 
 @task
 def acquire_gpu_role(job_id: str, role: str) -> dict[str, Any]:
-    result = acquire_lease(LeaseRequest(job_id=job_id, role=role, ttl_minutes=30, owner="prefect-render-flow"))
+    result = acquire_lease(LeaseRequest(job_id=job_id, role=role, ttl_minutes=120, owner="prefect-render-flow"))
     if not result.get("acquired"):
         raise RuntimeError(f"Could not acquire GPU lease for role {role}: {result}")
     return result["lease"]
@@ -69,13 +75,18 @@ def release_gpu_role(lease_id: str) -> dict[str, Any]:
 
 
 @task
-def build_dry_run_render_manifest(scene: dict[str, Any], scene_manifest_path: str, lease: dict[str, Any]) -> dict[str, Any]:
+def build_render_manifest(
+    scene: dict[str, Any],
+    scene_manifest_path: str,
+    lease: dict[str, Any],
+    render_id: str,
+    out_dir: str,
+    note: str,
+) -> dict[str, Any]:
     render = deepcopy(read_json(RENDER_TEMPLATE))
     scene_id = scene["scene_id"]
     episode_id = scene["episode_id"]
-    render_id = f"render_{scene_id}_attempt001"
-    out_dir = PROJECT_ROOT / "orchestrator_runs" / episode_id / scene_id
-    render_path = out_dir / "render_manifest.dry_run.json"
+    render_path = Path(out_dir) / "render_manifest.json"
 
     render.update(
         {
@@ -103,7 +114,7 @@ def build_dry_run_render_manifest(scene: dict[str, Any], scene_manifest_path: st
             "finished_at": utc_now(),
         }
     )
-    render["review"]["notes"] = "Dry run only: service checks and manifest contract validation completed; no GPU render submitted."
+    render["review"]["notes"] = note
     path = write_json(render_path, render)
     return {"path": path, "manifest": render}
 
@@ -138,11 +149,31 @@ def record_render_run(
     )
 
 
+@task
+def run_wan2gp_cli(settings_path: str, output_dir: str, validate_only: bool, gpu_ids: list[int]) -> dict[str, Any]:
+    profile = read_profile()
+    uuid_by_id = {int(gpu["id"]): gpu["uuid"] for gpu in profile.get("gpus", [])}
+    cuda_visible_devices = ",".join(uuid_by_id.get(int(gpu_id), str(gpu_id)) for gpu_id in gpu_ids)
+    return run_wan2gp_process(
+        settings_path=settings_path,
+        output_dir=output_dir,
+        gpu_ids=gpu_ids,
+        cuda_visible_devices=cuda_visible_devices,
+        dry_run=validate_only,
+    ).as_dict()
+
+
 @flow(name="microdrama-production-render")
-def microdrama_production_render(scene_manifest_path: str, dry_run: bool = True, gpu_role: str = "wan2gp_ltx_30s") -> str:
+def microdrama_production_render(
+    scene_manifest_path: str,
+    dry_run: bool = True,
+    gpu_role: str = "wan2gp_ltx_30s",
+    wan2gp_validate_only: bool = False,
+) -> str:
     logger = get_run_logger()
     scene = load_scene_manifest(scene_manifest_path)
-    render_id = f"render_{scene['scene_id']}_attempt001"
+    render_id = render_attempt_id(scene["scene_id"])
+    run_dir = PROJECT_ROOT / "orchestrator_runs" / scene["episode_id"] / scene["scene_id"] / render_id
 
     service_checks = [
         check_http_service("orchestrator", "http://orchestrator-api:8090/health"),
@@ -164,13 +195,55 @@ def microdrama_production_render(scene_manifest_path: str, dry_run: bool = True,
         )
         raise RuntimeError(f"Required service checks failed: {failed}")
 
-    lease = acquire_gpu_role(job_id=f"{scene['scene_id']}-dry-run", role=gpu_role)
+    lease = acquire_gpu_role(job_id=render_id, role=gpu_role)
     record_render_run(scene, render_id, "leased", dry_run, gpu_role, service_checks, lease=lease)
     try:
         if not dry_run:
-            raise NotImplementedError("Live Comfy/Wan2GP submission is intentionally gated behind the dry-run manifest contract.")
+            settings_json = scene.get("video_generation", {}).get("settings_json", "")
+            if not settings_json:
+                raise ValueError("Live Wan2GP render requires scene.video_generation.settings_json")
+            wan_out_dir = run_dir / "wan2gp"
+            wan_result = run_wan2gp_cli(settings_json, str(wan_out_dir), wan2gp_validate_only, lease.get("gpu_ids", []))
+            if not wan_result.get("ok"):
+                raise RuntimeError(f"Wan2GP CLI failed with exit code {wan_result.get('exit_code')}:\n{wan_result.get('output')}")
 
-        manifest_result = build_dry_run_render_manifest(scene, scene_manifest_path, lease)
+            manifest_result = build_render_manifest(
+                scene,
+                scene_manifest_path,
+                lease,
+                render_id,
+                str(run_dir),
+                "Wan2GP CLI validation completed." if wan2gp_validate_only else "Live Wan2GP CLI render completed.",
+            )
+            manifest = manifest_result["manifest"]
+            generated_files = wan_result.get("generated_files", [])
+            if generated_files:
+                manifest["outputs"]["video_path"] = generated_files[0]
+                manifest["outputs"]["video_asset_id"] = f"asset_{render_id}_video"
+            manifest_result["path"] = write_json(manifest_result["path"], manifest)
+            manifest_result["manifest"] = manifest
+            record_render_run(
+                scene,
+                render_id,
+                "wan2gp_validated" if wan2gp_validate_only else "render_completed",
+                dry_run,
+                gpu_role,
+                service_checks,
+                lease=lease,
+                manifest_result=manifest_result,
+                finished=True,
+            )
+            logger.info("Wan2GP CLI completed; wrote render manifest to %s", manifest_result["path"])
+            return manifest_result["path"]
+
+        manifest_result = build_render_manifest(
+            scene,
+            scene_manifest_path,
+            lease,
+            render_id,
+            str(run_dir),
+            "Dry run only: service checks and manifest contract validation completed; no GPU render submitted.",
+        )
         record_render_run(
             scene,
             render_id,

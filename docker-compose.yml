@@ -62,6 +62,7 @@ services:
       - ./flows:/app/flows:ro
       - ./logs:/app/logs
       - /srv/nvme-data/containers/projects/microdramas:/projects/microdramas
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - default
       - neo4j_world
@@ -100,6 +101,7 @@ services:
       - /srv/nvme-data/containers/projects/microdramas:/projects/microdramas
       - /srv/nvme-data/containers/wan2gp/outputs:/wan2gp/outputs
       - /srv/nvme-data/containers/comfy/storage-user/output:/comfy/output
+      - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - default
       - neo4j_world

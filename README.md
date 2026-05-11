@@ -55,6 +55,22 @@ docker compose run --rm prefect-worker python -m flows.production_render_flow
 This validates service reachability and writes a dry-run render manifest without submitting a GPU render.
 It also records the run in Postgres under `render_runs`.
 
+Validate the live Wan2GP CLI path without rendering:
+
+```bash
+docker compose run --rm prefect-worker python - <<'PY'
+from flows.production_render_flow import microdrama_production_render
+
+microdrama_production_render(
+    scene_manifest_path="/projects/microdramas/scenes/smoke_scene_manifest.json",
+    dry_run=False,
+    wan2gp_validate_only=True,
+)
+PY
+```
+
+This uses Docker exec against the running `wan2gp` container and calls `wgp.py --process ... --dry-run`.
+
 Acquire and release a local GPU lease:
 
 ```bash

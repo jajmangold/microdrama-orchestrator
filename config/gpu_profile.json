@@ -3,6 +3,24 @@
   "host_id": "beast-sm70-16x16gb",
   "description": "Local SM70 render host with 16 visible 16GB-class CUDA devices. Use explicit leases before production jobs.",
   "default_ttl_minutes": 180,
+  "gpus": [
+    {"id": 0, "uuid": "GPU-f0641c73-e42a-2ba3-278a-3b4ad86c24a9", "name": "NVIDIA CMP 100-210"},
+    {"id": 1, "uuid": "GPU-299f91bd-13ff-f86f-9a35-959c8efe6af6", "name": "NVIDIA CMP 100-210"},
+    {"id": 2, "uuid": "GPU-4f0356c3-2160-54bd-6464-8b62eaf5b23c", "name": "NVIDIA CMP 100-210"},
+    {"id": 3, "uuid": "GPU-b23f051c-5548-21d4-4ca6-f2b1c4d3237e", "name": "NVIDIA CMP 100-210"},
+    {"id": 4, "uuid": "GPU-c1b56a89-5620-3520-9ebf-63834f715a2f", "name": "Tesla V100-PCIE-12GB"},
+    {"id": 5, "uuid": "GPU-68309a3d-8ef1-8660-8634-6953b027b34a", "name": "NVIDIA CMP 100-210"},
+    {"id": 6, "uuid": "GPU-44c4fe09-a616-cf30-6a47-b86bba89f923", "name": "NVIDIA CMP 100-210"},
+    {"id": 7, "uuid": "GPU-c0e49412-4443-a727-f0fd-b20611796a3d", "name": "Tesla V100-PCIE-12GB"},
+    {"id": 8, "uuid": "GPU-534081fb-0507-a383-481e-c994ad231ae9", "name": "NVIDIA CMP 100-210"},
+    {"id": 9, "uuid": "GPU-7540b3cb-86d0-be61-e72f-525f7e051444", "name": "Tesla V100-PCIE-12GB"},
+    {"id": 10, "uuid": "GPU-75f8a273-a6fb-971d-5f04-48cc73cccdcd", "name": "NVIDIA CMP 100-210"},
+    {"id": 11, "uuid": "GPU-1abdcc29-1477-c2d3-885b-8286abb29cd7", "name": "Tesla V100-PCIE-12GB"},
+    {"id": 12, "uuid": "GPU-61318af7-6bcc-297f-acd8-c141e00aa18f", "name": "NVIDIA CMP 100-210"},
+    {"id": 13, "uuid": "GPU-367c3947-d69d-2047-d72a-6f9959dfe85b", "name": "NVIDIA CMP 100-210"},
+    {"id": 14, "uuid": "GPU-71be175a-2ae4-735d-78e1-6eeeea51fc53", "name": "Tesla V100-PCIE-12GB"},
+    {"id": 15, "uuid": "GPU-01085ed5-3a1a-d9d9-4f2f-fdf5e34f323f", "name": "NVIDIA CMP 100-210"}
+  ],
   "roles": {
     "wan2gp_ltx_30s": {
       "description": "Near-exclusive GPU for a 30s Wan2GP LTX sliding-window render. Budget about 70 minutes per 30s clip.",
