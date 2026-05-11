@@ -77,6 +77,10 @@ Ledger statuses ending in `_ingested` mean the `RenderRun` and linked `Asset` no
 Before leasing a GPU, the flow preflights the scene and Wan2GP settings, resolves project-relative paths, verifies
 required start keyframes and audio guides exist, and records the resolved inputs in the render manifest.
 
+The first live Comfy-keyframe-to-Wan2GP smoke render completed as
+`render_scene_smoke_001_20260511T204421Z`. It produced a `576x1024`, `24 fps`, `10.042s` MP4 with audio and ended
+with ledger status `render_ingested`.
+
 Acquire and release a local GPU lease:
 
 ```bash
