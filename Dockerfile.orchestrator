@@ -15,7 +15,8 @@ RUN pip install --no-cache-dir \
     langgraph \
     langchain-core \
     prefect==3.6.29 \
-    pydantic-settings
+    pydantic-settings \
+    pillow
 
 COPY app /app/app
 COPY flows /app/flows

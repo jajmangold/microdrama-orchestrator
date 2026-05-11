@@ -6,6 +6,8 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from PIL import Image, ImageOps
+
 PROJECT_ROOT = Path("/projects/microdramas")
 KEYFRAME_TEMPLATE = PROJECT_ROOT / "keyframes/keyframe_manifest_template.json"
 
@@ -46,18 +48,41 @@ def first_comfy_image(result: dict[str, Any]) -> dict[str, Any]:
     return outputs[0]
 
 
-def copy_comfy_output_to_project(output: dict[str, Any], scene_id: str) -> dict[str, str]:
+def normalize_image_to_resolution(source: Path, width: int, height: int) -> Path:
+    if not width or not height:
+        return source
+    suffix = f"_{width}x{height}"
+    target = source.with_name(f"{source.stem}{suffix}{source.suffix}")
+    with Image.open(source) as image:
+        image = image.convert("RGB")
+        if image.size == (width, height):
+            if source != target:
+                shutil.copy2(source, target)
+            return target
+        normalized = ImageOps.fit(image, (width, height), method=Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+        normalized.save(target)
+    return target
+
+
+def copy_comfy_output_to_project(output: dict[str, Any], scene: dict[str, Any]) -> dict[str, str]:
     source = Path(output.get("container_path") or "")
     if not source.exists():
         source = Path(output.get("host_path") or "")
     if not source.exists():
         raise FileNotFoundError(f"Comfy output file not found: {output}")
 
-    target_dir = PROJECT_ROOT / "assets/generated" / scene_id
+    target_dir = PROJECT_ROOT / "assets/generated" / scene["scene_id"]
     target = target_dir / source.name
     target_dir.mkdir(parents=True, exist_ok=True)
     if source.resolve() != target.resolve():
         shutil.copy2(source, target)
+
+    resolution = scene.get("target_resolution", {})
+    target = normalize_image_to_resolution(
+        target,
+        int(resolution.get("width") or 0),
+        int(resolution.get("height") or 0),
+    )
     return {
         "source_path": str(source),
         "project_path": str(target),
@@ -121,7 +146,7 @@ def register_comfy_keyframe(
     scene = read_json(scene_path)
     result = read_json(comfy_result_path)
     output = first_comfy_image(result)
-    copied = copy_comfy_output_to_project(output, scene["scene_id"])
+    copied = copy_comfy_output_to_project(output, scene)
 
     asset_id = f"asset_{scene['scene_id']}_{role}_keyframe"
     graph_asset_id = asset_id

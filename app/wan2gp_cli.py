@@ -89,7 +89,7 @@ def run_wan2gp_process(
         command[-1] += " --dry-run"
     shell_command = " && ".join(command)
 
-    environment = {}
+    environment = {"PYTORCH_ALLOC_CONF": "expandable_segments:True"}
     if cuda_visible_devices:
         environment["CUDA_VISIBLE_DEVICES"] = cuda_visible_devices
     elif gpu_ids:
