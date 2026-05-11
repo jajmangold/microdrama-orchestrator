@@ -87,6 +87,24 @@ curl -sS -X POST http://127.0.0.1:8090/gpu/leases/acquire \
 curl -sS http://127.0.0.1:8090/gpu/leases | jq .
 ```
 
+Prepare a ComfyUI workflow payload without submitting a GPU job:
+
+```bash
+docker compose run --rm prefect-worker python - <<'PY'
+from flows.comfy_workflow_flow import microdrama_comfy_workflow
+
+print(microdrama_comfy_workflow(
+    manifest_path="workflows/manifests/z-image-turbo-fast-q5km.json",
+    overrides={
+        "prompt": "vertical cinematic character reference portrait, neutral expression",
+        "seed": 12345,
+        "filename_prefix": "microdrama_assets/orchestrator_probe",
+    },
+    dry_run=True,
+))
+PY
+```
+
 ## Project Management With Atlas
 
 Atlas is useful as the agent-facing task layer. Use it for:
