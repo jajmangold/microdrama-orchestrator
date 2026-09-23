@@ -19,19 +19,15 @@ All of this runs as Prefect flows with GPU leases, retry logic, and a Postgres-b
 
 ## Architecture
 
-```
-┌─────────────┐     ┌──────────────┐     ┌────────────┐
-│  FastAPI     │────▶│  Prefect     │────▶│  Workers   │
-│  control     │     │  workflows   │     │  (GPU)     │
-│  plane       │     │              │     │            │
-└──────┬──────┘     └──────┬───────┘     └──────┬─────┘
-       │                   │                     │
-       ▼                   ▼                     ▼
-┌─────────────┐     ┌──────────────┐     ┌────────────┐
-│  Neo4j      │     │  Postgres    │     │  ComfyUI   │
-│  world      │     │  render      │     │  Wan2GP    │
-│  graph      │     │  ledger      │     │  AceStep   │
-└─────────────┘     └──────────────┘     └────────────┘
+```mermaid
+graph LR
+    API[FastAPI control plane] --> PF[Prefect workflows]
+    PF --> W[GPU Workers]
+    API --> NJ[Neo4j world graph]
+    API --> PG[Postgres render ledger]
+    W --> CU[ComfyUI]
+    W --> W2[ Wan2GP]
+    W --> AS[AceStep]
 ```
 
 | Service | Purpose |
