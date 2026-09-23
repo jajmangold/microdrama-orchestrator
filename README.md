@@ -1,23 +1,15 @@
 # Microdrama Orchestrator
 
-Orchestration layer for AI-generated short-form video. Manages the full pipeline: planning, keyframe generation, video rendering, and Neo4j world-state ingestion -- across multiple GPU workers with lease-based mutual exclusion.
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Docker](https://img.shields.io/badge/Docker-ready-blue.svg)](https://hub.docker.com/)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100%2B-green.svg)](https://fastapi.tiangolo.com/)
 
-## License
+Orchestration layer for AI-generated short-form video. **From script to rendered video in one command** -- planning, keyframe generation, video rendering, and Neo4j world-state ingestion across multiple GPU workers with lease-based mutual exclusion.
 
-[MIT](LICENSE)
+---
 
-## What It Does
-
-Takes a scene description and runs the full production pipeline:
-
-1. **Plan** -- Qwen 27B generates shot/audio/asset plans via LangGraph
-2. **Keyframe** -- ComfyUI generates start/end keyframes with Z-Image/Klein
-3. **Render** -- Wan2GP produces LTX 2.3 video with audio
-4. **Ingest** -- Results go into Neo4j as `RenderRun` + `Asset` nodes linked to the world graph
-
-All of this runs as Prefect flows with GPU leases, retry logic, and a Postgres-backed render ledger.
-
-## Architecture
+## The Pipeline
 
 ```mermaid
 graph LR
@@ -26,9 +18,20 @@ graph LR
     API --> NJ[Neo4j world graph]
     API --> PG[Postgres render ledger]
     W --> CU[ComfyUI]
-    W --> W2[ Wan2GP]
+    W --> W2[Wan2GP]
     W --> AS[AceStep]
 ```
+
+| Stage | Tool | What Happens |
+|-------|------|-------------|
+| **Plan** | Qwen 27B + LangGraph | Generates shot/audio/asset plans |
+| **Keyframe** | ComfyUI + Z-Image/Klein | Start/end keyframe generation |
+| **Render** | Wan2GP + LTX 2.3 | Video with audio rendering |
+| **Ingest** | Neo4j | Results linked to world graph |
+
+All stages run as Prefect flows with GPU leases, retry logic, and a Postgres-backed render ledger.
+
+## Services
 
 | Service | Purpose |
 |---------|---------|
@@ -39,44 +42,10 @@ graph LR
 | `atlas-mcp` | Project/task management for agents (MCP protocol) |
 | `postgres` | Prefect metadata and render run ledger |
 
-## Key Features
-
-### GPU Lease Management
-
-Prevents two workflows from using the same GPU simultaneously:
-
-```bash
-curl -X POST http://127.0.0.1:8090/gpu/leases/acquire \
-  -H 'Content-Type: application/json' \
-  -d '{"job_id":"render-001","role":"wan2gp_ltx_30s","ttl_minutes":120}'
-```
-
-Leases auto-expire. Workers check lease ownership before starting renders.
-
-### ComfyUI Artifact Queue
-
-Splits Comfy workflows at expensive boundaries so different GPU workers can handle different stages. Stage 1 writes a `.READY` marker; stage 2 workers claim it, patch a workflow, and submit.
-
-```bash
-docker compose run --rm ltx-av-queue python -m app.artifact_queue_worker \
-  --config /app/config/artifact_queue.example.json --status
-```
-
-The queue framework is generic -- any Comfy workflow can be split this way. See [`config/artifact_queue.example.json`](config/artifact_queue.example.json).
-
-### Render Ledger
-
-Every render attempt is tracked in Postgres with status, GPU IDs, manifest path, service checks, and errors. Query it:
-
-```bash
-curl http://127.0.0.1:8090/render-runs | jq .
-```
-
 ## Quick Start
 
 ```bash
 cp -n .env.example .env
-# Edit .env to set your host-side volume paths
 docker compose up -d --build
 ```
 
@@ -93,11 +62,40 @@ curl http://127.0.0.1:8090/services
 docker compose run --rm prefect-worker python -m flows.production_render_flow
 ```
 
-This validates service reachability and writes a dry-run render manifest without submitting a GPU job.
+Validates service reachability and writes a dry-run render manifest without submitting a GPU job.
+
+## Features
+
+| Capability | Description |
+|-----------|-------------|
+| GPU lease management | Prevents two workflows from using the same GPU simultaneously |
+| ComfyUI artifact queue | Splits workflows at expensive boundaries for multi-GPU stages |
+| Render ledger | Every render attempt tracked in Postgres with full audit trail |
+| Worker profiles | Cluster inventory with GPU counts, models, and throughput estimates |
+| Prefect workflows | Durable execution with retry, logging, and scheduling |
+| REST control plane | Health checks, lease API, render run queries |
+
+### GPU Leases
+
+```bash
+curl -X POST http://127.0.0.1:8090/gpu/leases/acquire \
+  -H 'Content-Type: application/json' \
+  -d '{"job_id":"render-001","role":"wan2gp_ltx_30s","ttl_minutes":120}'
+```
+
+Leases auto-expire. Workers check lease ownership before starting renders.
+
+### Worker Profiles
+
+Query available workers:
+
+```bash
+curl 'http://127.0.0.1:8090/workers?job_role=wan2gp_ltx_30s' | jq .
+```
+
+Cluster inventory in [`config/worker_profiles.json`](config/worker_profiles.json) -- GPU count, architecture, VRAM, allowed job roles, throughput estimates, and service endpoints.
 
 ## Configuration
-
-Key environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -108,22 +106,17 @@ Key environment variables:
 
 See [`.env.example`](.env.example) for the full list.
 
-## Worker Profiles
-
-The cluster inventory lives in [`config/worker_profiles.json`](config/worker_profiles.json). Each profile describes:
-
-- GPU count, architecture, and VRAM per card
-- Available models and allowed job roles
-- Throughput estimates per job type
-- Service endpoints (Wan2GP, ComfyUI, vLLM)
-
-Query available workers:
-
-```bash
-curl 'http://127.0.0.1:8090/workers?job_role=wan2gp_ltx_30s' | jq .
-```
-
 ## Companion Projects
 
-- [neo4j-world](https://github.com/jajmangold/neo4j-world) -- narrative world graph database
-- [gv100-fecs-limiter](https://github.com/jajmangold/gv100-fecs-limiter) -- GPU firmware research (runs on the same CMP 100-210 hardware)
+| Project | Purpose |
+|---------|---------|
+| [neo4j-world](https://github.com/jajmangold/neo4j-world) | Narrative world graph database |
+| [gv100-fecs-limiter](https://github.com/jajmangold/gv100-fecs-limiter) | GPU firmware research (runs on the same CMP 100-210 hardware) |
+
+## Contributing
+
+Issues and PRs welcome. See the [CLAUDE.md](CLAUDE.md) for architecture conventions.
+
+## License
+
+[MIT](LICENSE)
