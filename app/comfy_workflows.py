@@ -13,7 +13,7 @@ import httpx
 PROJECT_ROOT = Path("/projects/microdramas")
 COMFY_OUTPUT_ROOT = Path(os.getenv("COMFY_OUTPUT_ROOT", "/comfy/output"))
 HOST_COMFY_OUTPUT_ROOT = Path(
-    os.getenv("HOST_COMFY_OUTPUT_ROOT", "/srv/nvme-data/containers/comfy/storage-user/output")
+    os.getenv("HOST_COMFY_OUTPUT", "/srv/nvme-data/containers/comfy/storage-user/output")
 )
 
 

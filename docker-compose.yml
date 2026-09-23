@@ -48,7 +48,7 @@ services:
     environment:
       PREFECT_API_URL: ${PREFECT_API_URL:-http://prefect-server:4200/api}
       RENDER_LEDGER_DATABASE_URL: postgresql://${POSTGRES_USER:-microdrama}:${POSTGRES_PASSWORD:-microdrama-local}@postgres:5432/${POSTGRES_DB:-microdrama}
-      QWEN27B_BASE_URL: ${QWEN27B_BASE_URL:-http://rtx0.python-bull.ts.net:8000/v1}
+      QWEN27B_BASE_URL: ${QWEN27B_BASE_URL:-http://localhost:8000/v1}
       QWEN27B_MODEL: ${QWEN27B_MODEL:-qwen27b}
       NEO4J_URI: ${NEO4J_URI:-bolt://neo4j-world:7687}
       NEO4J_USER: ${NEO4J_USER:-neo4j}
@@ -62,7 +62,9 @@ services:
       - ./flows:/app/flows:ro
       - ./scripts:/app/scripts:ro
       - ./logs:/app/logs
-      - /srv/nvme-data/containers/projects/microdramas:/projects/microdramas
+      - ${HOST_MICRODRAMA_PROJECTS:-./data/projects}:/projects/microdramas
+      - ${HOST_COMFY_OUTPUT:-./data/comfy-output}:/comfy/output
+      - ${HOST_COMFY_WORKFLOWS:-./data/comfy-workflows}:/comfy/workflows:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - default
@@ -86,7 +88,7 @@ services:
     environment:
       PREFECT_API_URL: ${PREFECT_API_URL:-http://prefect-server:4200/api}
       RENDER_LEDGER_DATABASE_URL: postgresql://${POSTGRES_USER:-microdrama}:${POSTGRES_PASSWORD:-microdrama-local}@postgres:5432/${POSTGRES_DB:-microdrama}
-      QWEN27B_BASE_URL: ${QWEN27B_BASE_URL:-http://rtx0.python-bull.ts.net:8000/v1}
+      QWEN27B_BASE_URL: ${QWEN27B_BASE_URL:-http://localhost:8000/v1}
       QWEN27B_MODEL: ${QWEN27B_MODEL:-qwen27b}
       NEO4J_URI: ${NEO4J_URI:-bolt://neo4j-world:7687}
       NEO4J_USER: ${NEO4J_USER:-neo4j}
@@ -100,9 +102,10 @@ services:
       - ./flows:/app/flows:ro
       - ./scripts:/app/scripts:ro
       - ./logs:/app/logs
-      - /srv/nvme-data/containers/projects/microdramas:/projects/microdramas
-      - /srv/nvme-data/containers/wan2gp/outputs:/wan2gp/outputs
-      - /srv/nvme-data/containers/comfy/storage-user/output:/comfy/output
+      - ${HOST_MICRODRAMA_PROJECTS:-./data/projects}:/projects/microdramas
+      - ${HOST_WAN2GP_OUTPUTS:-./data/wan2gp-outputs}:/wan2gp/outputs
+      - ${HOST_COMFY_OUTPUT:-./data/comfy-output}:/comfy/output
+      - ${HOST_COMFY_WORKFLOWS:-./data/comfy-workflows}:/comfy/workflows:ro
       - /var/run/docker.sock:/var/run/docker.sock
     networks:
       - default
@@ -115,6 +118,29 @@ services:
       do prefect work-pool create microdrama-local --type process >/dev/null 2>&1 || sleep 3;
       done;
       prefect worker start --pool microdrama-local"
+
+  ltx-av-queue:
+    build:
+      context: .
+      dockerfile: Dockerfile.orchestrator
+    container_name: microdrama-ltx-av-queue
+    restart: unless-stopped
+    depends_on:
+      orchestrator-api:
+        condition: service_started
+    environment:
+      LTX_AV_QUEUE_CONFIG: /app/config/ltx_av_queue.json
+    volumes:
+      - ./app:/app/app:ro
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+      - ${HOST_MICRODRAMA_PROJECTS:-./data/projects}:/projects/microdramas
+      - ${HOST_COMFY_OUTPUT:-./data/comfy-output}:/comfy/output
+      - ${HOST_COMFY_WORKFLOWS:-./data/comfy-workflows}:/comfy/workflows:ro
+    networks:
+      - default
+      - comfy_net
+    command: python -m app.ltx_av_queue_worker
 
   atlas-mcp:
     build:

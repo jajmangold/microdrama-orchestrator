@@ -6,7 +6,11 @@ from fastapi import FastAPI
 from neo4j import GraphDatabase
 
 from app.gpu_leases import LeaseRequest, ReleaseRequest, acquire_lease, list_leases, read_profile, release_lease
+from app.ltx_av_queue import load_config as load_ltx_av_queue_config
+from app.ltx_av_queue import queue_summary as ltx_av_queue_summary
 from app.render_ledger import get_render_run, init_render_ledger, list_render_runs
+from app.wan_prompt_repair import PromptRepairRequest, PromptRepairResponse, repair_wan_prompt
+from app.wan_prompt_rag import format_examples_for_prompt, retrieve_prompt_examples
 from app.worker_profiles import list_workers, read_worker_profiles
 
 app = FastAPI(title="Microdrama Orchestrator", version="0.1.0")
@@ -24,7 +28,7 @@ async def health() -> dict[str, str]:
 @app.get("/services")
 async def services() -> dict[str, str]:
     return {
-        "qwen27b": env("QWEN27B_BASE_URL", "http://rtx0.python-bull.ts.net:8000/v1"),
+        "qwen27b": env("QWEN27B_BASE_URL", "http://localhost:8000/v1"),
         "wan2gp": env("WAN2GP_URL", "http://host.docker.internal:7860"),
         "comfy": env("COMFY_URL", "http://host.docker.internal:8188"),
         "acestep": env("ACESTEP_URL", "http://host.docker.internal:8081"),
@@ -35,7 +39,7 @@ async def services() -> dict[str, str]:
 
 @app.get("/qwen27b/models")
 async def qwen_models() -> Any:
-    base_url = env("QWEN27B_BASE_URL", "http://rtx0.python-bull.ts.net:8000/v1")
+    base_url = env("QWEN27B_BASE_URL", "http://localhost:8000/v1")
     async with httpx.AsyncClient(timeout=15) as client:
         response = await client.get(f"{base_url}/models")
         response.raise_for_status()
@@ -44,7 +48,7 @@ async def qwen_models() -> Any:
 
 @app.post("/qwen27b/smoke")
 async def qwen_smoke() -> Any:
-    base_url = env("QWEN27B_BASE_URL", "http://rtx0.python-bull.ts.net:8000/v1")
+    base_url = env("QWEN27B_BASE_URL", "http://localhost:8000/v1")
     model = env("QWEN27B_MODEL", "qwen27b")
     payload = {
         "model": model,
@@ -56,6 +60,30 @@ async def qwen_smoke() -> Any:
         response = await client.post(f"{base_url}/chat/completions", json=payload)
         response.raise_for_status()
         return response.json()
+
+
+@app.post("/wan/prompt-repair", response_model=PromptRepairResponse)
+def wan_prompt_repair(request: PromptRepairRequest) -> PromptRepairResponse:
+    return repair_wan_prompt(request)
+
+
+@app.get("/wan/prompt-examples/search")
+def wan_prompt_examples_search(q: str, limit: int = 5) -> dict[str, Any]:
+    examples = retrieve_prompt_examples(q, limit=limit)
+    return {
+        "count": len(examples),
+        "examples": [
+            {
+                "id": example.example_id,
+                "tags": example.tags,
+                "positive": example.positive,
+                "negative": example.negative,
+                "notes": example.notes,
+            }
+            for example in examples
+        ],
+        "formatted": format_examples_for_prompt(examples),
+    }
 
 
 @app.get("/neo4j/smoke")
@@ -85,6 +113,11 @@ def workers_profile() -> dict[str, Any]:
 @app.get("/workers")
 def workers(status: str | None = None, job_role: str | None = None) -> dict[str, Any]:
     return {"workers": list_workers(status=status, job_role=job_role)}
+
+
+@app.get("/ltx-av-queue")
+def ltx_av_queue() -> dict[str, Any]:
+    return ltx_av_queue_summary(load_ltx_av_queue_config())
 
 
 @app.get("/gpu/leases")

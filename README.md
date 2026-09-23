@@ -1,8 +1,27 @@
 # Microdrama Orchestrator
 
-This directory is the glue layer for the microdrama production system.
+Orchestration layer for micro-drama video production. Combines a FastAPI control plane, Prefect workflow engine, GPU lease management, ComfyUI artifact queuing, and Neo4j world graph integration.
 
-## Roles
+## License
+
+[MIT](LICENSE)
+
+## Configuration
+
+Key environment variables (set in `.env`):
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `QWEN27B_BASE_URL` | `http://localhost:8000/v1` | vLLM/OpenAI-compatible planner endpoint |
+| `NEO4J_URI` | `bolt://neo4j-world:7687` | Neo4j Bolt URI |
+| `HOST_MICRODRAMA_PROJECTS` | `./data/projects` | Host path to project assets |
+| `HOST_COMFY_OUTPUT` | `./data/comfy-output` | Host path to ComfyUI output |
+| `HOST_COMFY_WORKFLOWS` | `./data/comfy-workflows` | Host path to ComfyUI workflows |
+| `HOST_WAN2GP_OUTPUTS` | `./data/wan2gp-outputs` | Host path to Wan2GP outputs |
+
+See `.env.example` for the full list.
+
+## Services
 
 - FastAPI (`orchestrator-api`, port `127.0.0.1:8090`): local control plane and health checks.
 - Prefect (`prefect-server`, port `127.0.0.1:4200`): durable workflow spine for long GPU jobs, retries, logs, and schedules.
@@ -14,7 +33,7 @@ This directory is the glue layer for the microdrama production system.
 
 ## Existing Services Used
 
-- Qwen3.6 27B vLLM: `http://rtx0.python-bull.ts.net:8000/v1`
+- Qwen3.6 27B vLLM: set `QWEN27B_BASE_URL` in `.env`
 - Wan2GP: `http://host.docker.internal:7860`
 - ComfyUI: `http://host.docker.internal:8188`
 - AceStep/music: `http://host.docker.internal:8081`
@@ -23,8 +42,8 @@ This directory is the glue layer for the microdrama production system.
 ## Start
 
 ```bash
-cd /srv/nvme-data/containers/microdrama-orchestrator
 cp -n .env.example .env
+# Edit .env to set your host-side volume paths (HOST_MICRODRAMA_PROJECTS, HOST_COMFY_OUTPUT, etc.)
 docker compose up -d --build
 ```
 
@@ -39,6 +58,7 @@ curl http://127.0.0.1:8090/neo4j/smoke
 curl http://127.0.0.1:8090/gpu/profile
 curl http://127.0.0.1:8090/workers
 curl 'http://127.0.0.1:8090/workers?job_role=wan2gp_ltx_30s'
+curl http://127.0.0.1:8090/ltx-av-queue
 curl http://127.0.0.1:8090/render-runs
 ```
 
@@ -142,6 +162,91 @@ microdrama_comfy_workflow(
 
 The handoff copies the Comfy output into `/projects/microdramas/assets/generated/<scene_id>/`, updates the scene
 visual fields, creates or updates a scene-specific keyframe manifest, and leaves the asset reachable by Wan2GP.
+
+## Comfy Artifact Queue Framework
+
+The generic artifact queue splits a Comfy workflow at an expensive boundary so different GPU workers can process the
+next stage later. Stage 1 writes a small handoff bundle, and queue workers claim `.READY` markers, patch a stage
+workflow, submit it to a target Comfy endpoint, and write durable sidecars.
+
+Generic Comfy nodes live in `ComfyUI/custom_nodes/ArtifactQueue`:
+
+- `SaveLatentArtifactForQueue`: writes a `LATENT` object to `<prefix>.latent.safetensors`, a traceable
+  `<prefix>.manifest.json`, and an atomic `<prefix>.READY` marker.
+- `LoadLatentArtifactForQueue`: loads the artifact from a `.READY`, manifest, safetensors path, or relative Comfy
+  output path.
+
+The reusable runner lives in `app/artifact_queue.py`, with a CLI in `app/artifact_queue_worker.py`. A new model queue
+needs a config shaped like `config/artifact_queue.example.json`, a stage workflow containing exactly one configured
+loader node, and one or more Comfy worker endpoints.
+
+Run a generic queue:
+
+```bash
+docker compose run --rm ltx-av-queue python -m app.artifact_queue_worker \
+  --config /app/config/artifact_queue.example.json --status
+```
+
+Important config knobs:
+
+- `queue_name`: stable event/client prefix for this queue.
+- `queue_dir`: directory scanned for `.READY` artifacts.
+- `output_root`: Comfy output root used to convert absolute paths into workflow-safe relative paths.
+- `stage_workflow_path`: Comfy API workflow submitted by workers.
+- `load_node_class_type` and `artifact_input_name`: identify the loader node and input to patch.
+- `output_prefix_input_name`: optional output-prefix input patched on any node that has it.
+
+The sidecar contract is intentionally simple:
+
+- `<artifact>.CLAIMED.json`: active worker claim
+- `<artifact>.DONE.json`: completed prompt id, outputs, elapsed time
+- `<artifact>.FAILED.json`: failed attempt, error, and retry count
+
+## LTX AV Latent Decode Queue
+
+The LTX AV queue is a model-specific compatibility wrapper around the generic artifact queue. It splits Comfy
+generation into two stages:
+
+- Stage 1 samples with the LTX transformer and writes a `.READY` latent artifact through `SaveLTXAVLatentForQueue`.
+- Stage 2 workers claim `.READY` artifacts, patch the stage-2 workflow, run VAE/audio decode through Comfy, and write `.DONE.json` or `.FAILED.json` sidecars.
+
+The queue runner is configured in `config/ltx_av_queue.json` and runs as the `ltx-av-queue` service. Existing workflows
+continue to use `LoadLTXAVLatentForQueue`; new model queues can use `LoadLatentArtifactForQueue`.
+
+Start the production queue watcher:
+
+```bash
+docker compose up -d --build ltx-av-queue
+```
+
+Inspect queue state:
+
+```bash
+curl http://127.0.0.1:8090/ltx-av-queue | jq .
+docker compose run --rm ltx-av-queue python -m app.ltx_av_queue_worker --status
+```
+
+Process one artifact and exit:
+
+```bash
+docker compose run --rm ltx-av-queue python -m app.ltx_av_queue_worker --once
+```
+
+Queue state is stored beside the latent artifact:
+
+- `<artifact>.CLAIMED.json`: active worker claim
+- `<artifact>.DONE.json`: completed decode result, prompt id, outputs, elapsed time
+- `<artifact>.FAILED.json`: failed attempt and error
+
+Events are appended to `/projects/microdramas/orchestrator_state/ltx_av_queue/events.jsonl`.
+
+Optional dedicated decode workers can be started from the Comfy service directory:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.ltx-av-workers.yml up -d ltx-av-decode-0 ltx-av-decode-1
+```
+
+Add those endpoints to `config/ltx_av_queue.json` and restart `ltx-av-queue` when the workers are online.
 
 ## Project Management With Atlas
 

@@ -210,7 +210,7 @@ def microdrama_production_render(
 
     service_checks = [
         check_http_service("orchestrator", "http://orchestrator-api:8090/health"),
-        check_http_service("qwen27b", os.getenv("QWEN27B_BASE_URL", "http://rtx0.python-bull.ts.net:8000/v1") + "/models"),
+        check_http_service("qwen27b", os.getenv("QWEN27B_BASE_URL", "http://localhost:8000/v1") + "/models"),
         check_http_service("comfy", os.getenv("COMFY_URL", "http://host.docker.internal:8188")),
         check_http_service("wan2gp", os.getenv("WAN2GP_URL", "http://host.docker.internal:7860")),
     ]

@@ -8,3 +8,4 @@ atlas/
 *.db
 *.sqlite
 *.log
+_ARCHIVE_NOTE.md

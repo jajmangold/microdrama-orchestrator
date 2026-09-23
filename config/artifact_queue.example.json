@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "queue_name": "example-artifact-queue",
+  "queue_dir": "/comfy/output/example_queue",
+  "output_root": "/comfy/output",
+  "stage_workflow_path": "/comfy/workflows/example-stage-decode.api.json",
+  "load_node_class_type": "LoadLatentArtifactForQueue",
+  "artifact_input_name": "artifact_path",
+  "output_prefix_input_name": "filename_prefix",
+  "output_prefix_base": "example_queue/processed",
+  "poll_seconds": 5.0,
+  "prompt_timeout_seconds": 1800,
+  "claim_stale_seconds": 7200,
+  "max_attempts": 2,
+  "retry_failed": false,
+  "event_log_path": "/projects/microdramas/orchestrator_state/example_artifact_queue/events.jsonl",
+  "workers": [
+    {
+      "worker_id": "example-decode-0",
+      "base_url": "http://comfyui-example-decode-0:8188",
+      "enabled": true,
+      "concurrency": 1
+    }
+  ]
+}

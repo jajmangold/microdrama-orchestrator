@@ -23,7 +23,7 @@ class RenderPlan:
 
 @task(retries=2, retry_delay_seconds=5)
 def ask_planner(prompt: str) -> str:
-    base_url = os.getenv("QWEN27B_BASE_URL", "http://rtx0.python-bull.ts.net:8000/v1")
+    base_url = os.getenv("QWEN27B_BASE_URL", "http://localhost:8000/v1")
     model = os.getenv("QWEN27B_MODEL", "qwen27b")
     payload = {
         "model": model,

@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "queue_name": "ltx-av-queue",
+  "queue_dir": "/comfy/output/ltxav_queue",
+  "output_root": "/comfy/output",
+  "stage2_workflow_path": "/comfy/workflows/ltx23-gguf-distorch2-stage2-decode-latent.api.json",
+  "load_node_class_type": "LoadLTXAVLatentForQueue",
+  "artifact_input_name": "artifact_path",
+  "output_prefix_input_name": "filename_prefix",
+  "output_prefix_base": "ltx23_gguf_av/queue_decode",
+  "poll_seconds": 5.0,
+  "prompt_timeout_seconds": 1800,
+  "claim_stale_seconds": 7200,
+  "max_attempts": 2,
+  "retry_failed": false,
+  "event_log_path": "/projects/microdramas/orchestrator_state/ltx_av_queue/events.jsonl",
+  "workers": [
+    {
+      "worker_id": "ltx-av-decode-0",
+      "base_url": "http://comfyui-ltx-av-decode-0:8188",
+      "enabled": true,
+      "concurrency": 1
+    }
+  ]
+}

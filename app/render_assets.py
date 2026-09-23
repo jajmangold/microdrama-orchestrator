@@ -5,8 +5,8 @@ from pathlib import Path
 from typing import Any
 
 PROJECT_ROOT = Path("/projects/microdramas")
-WAN2GP_PROJECT_ROOT = Path("/workspace/projects/microdramas")
-HOST_PROJECT_ROOT = Path("/srv/nvme-data/containers/projects/microdramas")
+WAN2GP_PROJECT_ROOT = Path(os.getenv("WAN2GP_PROJECT_ROOT", "/workspace/projects/microdramas"))
+HOST_PROJECT_ROOT = Path(os.getenv("HOST_MICRODRAMA_PROJECTS", "/srv/nvme-data/containers/projects/microdramas"))
 
 
 def read_json(path: str | Path) -> dict[str, Any]:

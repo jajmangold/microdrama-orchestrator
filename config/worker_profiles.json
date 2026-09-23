@@ -12,7 +12,7 @@
       "status": "active",
       "prefect_work_pool": "microdrama-local",
       "orchestrator_url": "http://127.0.0.1:8090",
-      "data_root": "/srv/nvme-data/containers",
+      "data_root": "/path/to/your/data",
       "gpu_profile_id": "beast-sm70-16x16gb",
       "gpu_count": 16,
       "gpu_arch": "sm70",
@@ -45,7 +45,7 @@
     },
     {
       "worker_id": "rtx0-qwen27b",
-      "hostname": "rtx0.python-bull.ts.net",
+      "hostname": "localhost",
       "status": "external",
       "prefect_work_pool": "remote-gpu-template",
       "orchestrator_url": "",
@@ -56,7 +56,7 @@
       "vram_gb_each": null,
       "pcie_notes": "Current role is remote OpenAI-compatible vLLM, not render execution.",
       "services": {
-        "qwen27b_vllm": "http://rtx0.python-bull.ts.net:8000/v1"
+        "qwen27b_vllm": "http://localhost:8000/v1"
       },
       "models": {
         "planner_critic_vision": ["qwen3.6-27b-vl"]
